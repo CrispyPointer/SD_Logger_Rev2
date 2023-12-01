@@ -100,7 +100,7 @@ bool FRAM_begin(uint8_t nAddressSizeBytes) {
   if (SPI_FRAM_HANDLE.State != HAL_SPI_STATE_READY) {
     return false;
   }
-  setAddressSize(3);
+  setAddressSize(nAddressSizeBytes);
   return true;
 }
 

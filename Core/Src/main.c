@@ -2,9 +2,9 @@
 /**
  ******************************************************************************
  * @file           : main.c
- * @brief          : Main program of the SODAQ LOGGER
- * @author         : Phuoc K. Ly
- * @version        : 0.1
+ * @brief          : Main program of the SD LOGGER REV2
+ * @author         : PL
+ * @version        : 2.0
  ******************************************************************************
  * @attention
  *
@@ -27,16 +27,16 @@
     The main program is available at https://github.com/phuocly2304/SD_Logger
     This file provide all the main functions of the SODAQ Logger.
 
-    SODAQ Logger is a simple but low power serial logger based on the STM32L412CBT6P running at 48MHz.
+    SD Logger Rev 2 is a simple but low power serial logger based on the STM32L412CBT6P running at 48MHz.
     The purpose of this logger was to create an easy to use logging device to assist all the Quality Assurance tasks
 
-    SODAQ Logger works with an external 64KB FRAM and an 512MB XTX SD card. By default, the logger UART runs at 115200bps
+    SD Logger Rev 2 works with an external 64KB FRAM and an 512MB XTX SD card or any uSD card (Depends on HW version). By default, the logger UART runs at 115200bps
 
-    Two most important characteristics of the SODAQ Logger is the low power aspect and the ability to become a USB stick
+    Two most important characteristics of the SD Logger Rev 2 is the low power aspect and the ability to become a USB stick
     so the users can easily extract all the data directly on the device.
 
-    22µA idle current consumption (When the device is not receiving any UART message)
-    6mA actively buffering data to FRAM
+    22µA sleep current consumption.
+    6mA actively buffering data to FRAM/
     30mA actively writing from FRAM to SD Card.
 
     Input Voltage on can either be 3.3V directly to 3V3 pin or up to 6.5V. Input Voltage on RX-I pin must not exceed 6V.
@@ -56,54 +56,18 @@
 #include <stdarg.h> //for va_list var arg functions
 #include <stdio.h>
 #include <string.h>
-#include "SPI_FRAM.h"
-
+#include "../FRAM/SPI_FRAM.h"
+#include "define.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-//#define DEBUG
-#ifdef DEBUG
-    #warning "You are running a debug build!"
-#endif
-
-#define VERSION     "v1.0"
-#define CONFIG_FILE "config.txt"
-
-//#define LOGGER_RESET 1
-/*************************************************FRAM ADDRESS CONFIG*****************************************************/
-// External FRAM locations for user settings
-#define DEVICE_ID_LOCATION 0x02 // Each logger will be assigned a unique ID
-
-#define LOCATION_FILE_NUMBER_LSB 0x03 // 16-bit value LSB for file location number
-#define LOCATION_FILE_NUMBER_MSB 0x04 // 16-bit value MSB for file location number
-
-#define BAUD_LSB_LOCATION 0x05 // 16-bit value LSB for Logger baudrate
-#define BAUD_MSB_LOCATION 0x06 // 16-bit value MSB for Logger baudrate
-
-#define LOGGER_STAT_LOCATION 0x07 // Logger status location
-
-/*---------------24 bit value of the FRAM Iterator address from the last logging ----------------*/
-#define SYNC_BUFFER_MSB  0x08 // First 8 MSB of the Iterator value
-#define SYNC_BUFFER_MSB2 0x09 // Second 8 bits of the Iterator
-#define SYNC_BUFFER_LSB  0x0A // Last 8 LSB of the Iterator
-/*-----------------------------------------------------------------------------------------------*/
-// #define LOCATION_BAUD_SETTING_HIGH 0x0B
-// #define LOCATION_BAUD_SETTING_MID 0x0C
-// #define LOCATION_BAUD_SETTING_LOW 0x0D
-
-// #define LOCATION_LOGGER_RESTORE 0x0E
-
-#define LOCATION_BUFFER_START 20      // Address of start position when buffering
-#define LOCATION_BUFFER_END   0x3ff70 // Address of end position when buffering (260000)
-/*****************************************************************************************************************/
-
 /********************************LOGGER STATUS & ERROR*****************************************************/
-typedef enum { LOGGER_INIT, Buffer_Sync_, Buffer_Sync_DONE, BUFFER_OK, SD_DONE, USB_PLUGIN, USB_UNKNOWN, USER_CONFIG, CONFIG_OK } LOGGER_STAT;
+typedef enum { LOGGER_INIT = 0u, Buffer_Sync_, Buffer_Sync_DONE, BUFFER_OK, SD_DONE, USB_PLUGIN, USB_UNKNOWN, USER_CONFIG, CONFIG_OK } LOGGER_STAT;
 
 typedef enum {
-    ERROR_SD_INIT = 2, // blink LED 2 times a second if SD card is mounted fail.
-    // LOGGER_RESET,
+    ERROR_SD_INIT = 2u, // blink LED 2 times a second if SD card is mounted fail.
+    LOGGER_RESET,
     CONFIG_ERROR
 } LOGGER_ERROR;
 /*************************************************************************************************/
@@ -126,6 +90,7 @@ SPI_HandleTypeDef hspi1;
 SPI_HandleTypeDef hspi2;
 
 UART_HandleTypeDef huart2;
+DMA_HandleTypeDef hdma_usart2_tx;
 
 /* USER CODE BEGIN PV */
 extern USBD_HandleTypeDef hUsbDeviceFS; // USB handler
@@ -153,16 +118,6 @@ const char* CFG_FILENAME = "config.txt"; // This is the name of the file that co
 long Current_System_Baud = 0;
 /*************************************************************************************************************************/
 
-/*************************************************USER DEFINE BUFFER SIZE, ITERATOR LOCAION AND TIMEOUT**********************************/
-uint32_t LOCATION_BUFFER_ITERATOR = LOCATION_BUFFER_START; // Iterator to the current position of the buffer
-#ifdef DEBUG
-static const unsigned int BUFFER_MAX = 1000; // User define max buffer 100 characters for debugging
-#else
-static const unsigned int BUFFER_MAX = 30000; // User define max buffer from 20 to 262000
-#endif
-static const uint32_t MAX_IDLE_TIME_MSEC = 5000; // User define timeout before going low power
-/****************************************************************************************************************************************/
-
 // Some variables for FatFs
 FATFS FatFs;                   // Fatfs handle
 FIL newFile, workingFile, fil; // File handle
@@ -173,35 +128,18 @@ char FATPATH[4];
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_SPI2_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_CRC_Init(void);
 /* USER CODE BEGIN PFP */
-static void turn_off_spi_SD(void);
-static void turn_off_spi_FRAM(void);
-
-// void LoggerSetting(void);
-void myprintf(const char* fmt, ...);
-void Stop_Mode_Entry(void);
-void System_error(LOGGER_ERROR Error_type);
-void Append_Data();
-
-uint8_t Tokenize_User_Setting(char* user_config_str);
-uint8_t Baud_Config(uint32_t new_baud);
-uint8_t Logger_Config(void);
-uint8_t Logger_Reset(void);
-uint8_t Append_File(char* fileName);
-uint8_t Buffer_Sync(int* Buffer_Iterator, LOGGER_STAT stat);
-uint8_t USB_init(LOGGER_STAT stat);
-
-char* New_Log(LOGGER_STAT stat);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 /*Custom printf function using UART TX with interrupt*/
-void myprintf(const char* fmt, ...)
+static void myprintf(const char* fmt, ...)
 {
     static char buffer[500];
     va_list args;
@@ -218,7 +156,7 @@ void myprintf(const char* fmt, ...)
  * @param stat
  * @retval None
  */
-uint8_t USB_init(LOGGER_STAT stat)
+static uint8_t USB_init(LOGGER_STAT stat)
 {
     /*If Cable plugin  USB device is configured by computer host*/
     if (stat == USB_UNKNOWN) {
@@ -236,12 +174,74 @@ uint8_t USB_init(LOGGER_STAT stat)
     return LOGGER_INIT;
 }
 
+/*Blink LEDs when system receive error based on error type*/
+static void system_error(LOGGER_ERROR Error_type)
+{
+    while (1) {
+        for (int index = 0; index < Error_type; index++) {
+            HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, SET);
+            HAL_Delay(200);
+            HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, RESET);
+            HAL_Delay(200);
+        }
+        HAL_Delay(2000);
+    }
+}
+
+/*!
+ *  @brief  Turn off SD NAND chip by disable 3V3 power supply and put the GPIOs to analog mode
+ *  @param  None
+ *  @retval None
+ */
+static void turn_off_spi_SD(void)
+{
+    HAL_SPI_DeInit(&hspi2);
+    GPIO_InitTypeDef GPIO_InitStruct = { 0 };
+
+    /*Configure GPIO pin Output Level */
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_10 | GPIO_PIN_14 | GPIO_PIN_15 | SD_CS_Pin, RESET);
+    GPIO_InitStruct.Pin = GPIO_PIN_10 | GPIO_PIN_14 | GPIO_PIN_15 | SD_CS_Pin;
+    GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+}
+
+/*!
+ * @brief Tokenize config variable from a string
+ * @param user_config_str user_config_string
+ * @retval Logger status
+ */
+static uint8_t tokenize_user_setting(char* user_config_str)
+{
+    /*Tokenize the buffer by comma*/
+    char* saveptr;
+    char* token = strtok_r(user_config_str, ",", &saveptr);
+    uint8_t count = 0;
+    uint8_t tokens_list[4];
+    /*Extract numbers from the tokens*/
+    while (token != NULL && token < 4) {
+        tokens_list[count] = atoi(token);
+        myprintf("Token %d: %d\r\r\n", count, tokens_list[count]);
+        token = strtok_r(NULL, ",", &saveptr);
+        count++;
+    }
+    if (count < 4) {
+        myprintf("Setting is invalid -- default setting will be applied\r\r\n");
+    }
+    setting_user_baud = tokens_list[0];
+    Baud_Config(setting_user_baud);
+    myprintf("New_baud: %d\r\r\n", setting_user_baud);
+    setting_overwrite = tokens_list[1];
+    myprintf("Overwrite mode: %d\r\r\n", setting_overwrite);
+    return CONFIG_OK;
+}
+
 /*!
  * @brief Congigurate parameters for the logger based on the config.txt file inside the SD. If there is no config.txt file, default parameters will be apply.
  * @param None
  * @retval Logger status
  */
-uint8_t Logger_Config(void)
+static uint8_t logger_config(void)
 {
     uint8_t attempt = 1;
     // Open the file system -- incase fail to mount the first time, re-try 5 times then blink LED for error handler
@@ -252,19 +252,19 @@ uint8_t Logger_Config(void)
             SD_MOUNT_FAIL++;
             if (SD_MOUNT_FAIL == 4)
                 SD_Flag = 0;
-            myprintf("\r\n~ SD card re-initializing failed - device will reset ~\r\n\r\n");
+            myprintf("\r\r\n~ SD card re-initializing failed - device will reset ~\r\r\n\r\r\n");
             System_error(ERROR_SD_INIT);
             // return
         }
-        myprintf("f_mount error (%i)\r\n Will try again for 5 times in 0.5 seconds\n", fres);
-        myprintf("Try %d times\n", attempt);
+        myprintf("f_mount error (%i)\r\r\n Will try again for 5 times in 0.5 seconds\r\n", fres);
+        myprintf("Try %d times\r\n", attempt);
         attempt++;
         if (FATFS_UnLinkDriver(&USERPath)) {
             myprintf("FATFS Unlinked fail!!");
             NVIC_SystemReset();
         }
         else
-            myprintf("FATFS Unlink success\n");
+            myprintf("FATFS Unlink success\r\n");
         turn_off_spi_SD();
         HAL_GPIO_WritePin(SD_EN_GPIO_Port, SD_EN_Pin, RESET);
         HAL_Delay(500);
@@ -276,51 +276,51 @@ uint8_t Logger_Config(void)
         MX_SPI2_Init();
         MX_FATFS_Init();
         HAL_Delay(1000);
-        myprintf("\r\n~ SD card re-initializing... ~\r\n\r\n");
+        myprintf("\r\r\n~ SD card re-initializing... ~\r\r\n\r\r\n");
         fres = f_mount(&FatFs, (const TCHAR*)FATPATH, 1); // 1=mount now
     }
 
 #ifdef DEBUG
-    myprintf("\r\n~ SD card mounted successfully ~\r\n\r\n");
-    myprintf("\n-----Begin config:-----\n");
+    myprintf("\r\r\n~ SD card mounted successfully ~\r\r\n\r\r\n");
+    myprintf("\r\n-----Begin config:-----\r\n");
 #endif
     fres = f_open(&fil, CONFIG_FILE, FA_READ | FA_OPEN_EXISTING);
     // /*This mean there is no config file -- a default config file will be added*/
     if (fres == FR_NO_FILE) {
         f_close(&fil);
-        myprintf("No config found - creating default!\r\n");
+        myprintf("No config found - creating default!\r\r\n");
         fres = f_open(&fil, CONFIG_FILE, FA_WRITE | FA_CREATE_NEW);
-        myprintf("fres: (%i)\r\n", fres);
+        myprintf("fres: (%i)\r\r\n", fres);
         if (fres == FR_OK) {
             BYTE baud_config[15];
             UINT bytesWrote;
             strncpy((char*)baud_config, "115200,0,0,0,", 7); // Default baudrate
             fres = f_write(&fil, baud_config, 7, &bytesWrote);
 #ifdef DEBUG
-            myprintf("Wrote total %i bytes!!\r\n", bytesWrote);
+            myprintf("Wrote total %i bytes!!\r\r\n", bytesWrote);
 #endif
-            myprintf("Default baud set to 115200\r\n");
-            myprintf("Overwrite mode disabled\r\n");
-            myprintf("CONFIG_OK!\r\n");
+            myprintf("Default baud set to 115200\r\r\n");
+            myprintf("Overwrite mode disabled\r\r\n");
+            myprintf("CONFIG_OK!\r\r\n");
             f_close(&fil);
             return CONFIG_OK;
         }
         else {
-            myprintf("f_write error (%i)\r\n", fres);
+            myprintf("f_write error (%i)\r\r\n", fres);
             // System_error(CONFIG_ERROR);
             return CONFIG_OK;
         }
     }
     else if (fres == FR_OK) {
 #ifdef DEBUG
-        myprintf("\r\nSuccessfully open configuration file!\r\n");
+        myprintf("\r\r\nSuccessfully open configuration file!\r\r\n");
 #endif
         char buffer[100];
         UINT byte_read;
         /*Read the file into the buffer*/
         f_read(&fil, (TCHAR*)buffer, sizeof(buffer), &byte_read);
         /*Tokenize the buffer by comma*/
-        Tokenize_User_Setting(buffer);
+        tokenize_user_setting(buffer);
         // close the file
         f_close(&fil);
         f_mount(NULL, "", 0);
@@ -329,41 +329,11 @@ uint8_t Logger_Config(void)
 }
 
 /*!
- * @brief Tokenize config variable from a string
- * @param user_config_str user_config_string
- * @retval Logger status
- */
-uint8_t Tokenize_User_Setting(char* user_config_str)
-{
-    /*Tokenize the buffer by comma*/
-    char* saveptr;
-    char* token = strtok_r(user_config_str, ",", &saveptr);
-    uint8_t count = 0;
-    uint8_t tokens_list[4];
-    /*Extract numbers from the tokens*/
-    while (token != NULL && token < 4) {
-        tokens_list[count] = atoi(token);
-        myprintf("Token %d: %d\r\n", count, tokens_list[count]);
-        token = strtok_r(NULL, ",", &saveptr);
-        count++;
-    }
-    if (count < 4) {
-        myprintf("Setting is invalid -- default setting will be applied\r\n");
-    }
-    setting_user_baud = tokens_list[0];
-    Baud_Config(setting_user_baud);
-    myprintf("New_baud: %d\r\n", setting_user_baud);
-    setting_overwrite = tokens_list[1];
-    myprintf("Overwrite mode: %d\r\n", setting_overwrite);
-    return CONFIG_OK;
-}
-
-/*!
  * @brief Configurate baud rate from config.txt
  * @param new_baud new user-config baud rate
  * @retval Logger status
  */
-uint8_t Baud_Config(uint32_t new_baud)
+static uint8_t baud_config(uint32_t new_baud)
 {
     // Disable the current USART
     HAL_UART_DeInit(&huart2);
@@ -374,17 +344,17 @@ uint8_t Baud_Config(uint32_t new_baud)
     // Wait for the USART to be ready
     while (HAL_UART_GetState(&huart2) != HAL_UART_STATE_READY) {};
 #ifdef DEBUG
-    myprintf("Successfully config new baudrate of: %d\r\n", new_baud);
+    myprintf("Successfully config new baudrate of: %d\r\r\n", new_baud);
 #endif
     return CONFIG_OK;
 }
 
 /*!
- * @brief Turn off FRAM peripheral by enable sleep mode and put the GPIOs to analog state
+ * @brief Turn off unused peripherals by enable sleep mode and put the GPIOs to analog state
  * @param None
  * @retval None
  */
-static void turn_off_spi_FRAM()
+static void peripherals_sleep(void)
 {
     HAL_SPI_DeInit(&hspi1);
     GPIO_InitTypeDef GPIO_InitStruct = { 0 };
@@ -393,25 +363,6 @@ static void turn_off_spi_FRAM()
     GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-}
-
-/*!
- *  @brief  Turn off SD NAND chip by disable 3V3 power supply and put the GPIOs to analog mode
- *  @param  None
- *  @retval None
- */
-static void turn_off_spi_SD()
-{
-    HAL_SPI_DeInit(&hspi2);
-    GPIO_InitTypeDef GPIO_InitStruct = { 0 };
-    /*Configure GPIO pin Output Level */
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_10 | GPIO_PIN_14 | GPIO_PIN_15 | SD_CS_Pin, RESET);
-    GPIO_InitStruct.Pin = GPIO_PIN_10 | GPIO_PIN_14 | GPIO_PIN_15 | SD_CS_Pin;
-    GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-    // HAL_GPIO_WritePin(GPIOB, GPIO_PIN_15, RESET);
-    // HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, SET);
 }
 
 /*Receive data call back after idle time (1 frame reception) */
@@ -438,47 +389,8 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef* huart, uint16_t size)
     }
 }
 
-/*Enter stop mode 1 and set UART as wakeup source*/
-void Stop_Mode_Entry()
-{
-
-    /*Kindly turn off FRAM and other peripheral :) */
-    turn_off_spi_FRAM();
-
-    /* Enable the USART2 Wake UP from STOP mode Interrupt */
-    __HAL_UART_ENABLE_IT(&huart2, UART_IT_WUF);
-
-    /* enable MCU wake-up by USART1 */
-    HAL_UARTEx_EnableStopMode(&huart2);
-// #ifdef DEBUG
-// myprintf("I go to sleep now!");
-// #endif
-#ifdef DEBUG
-    myprintf("******I am done waiting!!! Now I go sleep ******\n");
-#else
-    myprintf(">.<!\n");
-#endif
-    /*Deinit peripherals*/
-    HAL_DBGMCU_DisableDBGSleepMode();
-    HAL_DBGMCU_DisableDBGStopMode();
-    HAL_DBGMCU_DisableDBGStandbyMode();
-    HAL_SuspendTick();
-    /*Enter stop mode*/
-    HAL_PWREx_EnterSTOP1Mode(PWR_STOPENTRY_WFI);
-
-    /*Escape from stop mode*/
-    SystemClock_Config();
-    HAL_ResumeTick();
-    MX_GPIO_Init();
-    MX_SPI1_Init();
-    turn_off_spi_SD();
-    HAL_GPIO_WritePin(SD_EN_GPIO_Port, SD_EN_Pin, RESET);
-    /* Wake up based on RXNE flag successful*/
-    HAL_UARTEx_DisableStopMode(&huart2);
-}
-
-/*Create new | Check for logging file*/
-char* New_Log(LOGGER_STAT stat)
+/*Create new | update current logging file*/
+static char* New_Log(LOGGER_STAT stat)
 {
     uint8_t msb, lsb;
     unsigned int newFileNumber = 0;
@@ -496,7 +408,7 @@ char* New_Log(LOGGER_STAT stat)
     }
 /*Init and Mount SD Card in FATFS*/
 #ifdef DEBUG
-    myprintf("\r\n~ SD card initializing... ~\r\n\r\n");
+    myprintf("\r\r\n~ SD card initializing... ~\r\r\n\r\r\n");
 #endif
     // Open the file system -- incase fail to mount the first time, re-try 10 times before skipping this phase -- if the situation repeat for 3 times -> error
     // handler
@@ -509,15 +421,15 @@ char* New_Log(LOGGER_STAT stat)
                 SD_Flag = 0;
             NVIC_SystemReset();
         }
-        myprintf("f_mount error (%i)\r\n Will try again for 5 times in 0.5 seconds\n", fres);
-        myprintf("Try %d times\n", attempt);
+        myprintf("f_mount error (%i)\r\r\n Will try again for 5 times in 0.5 seconds\r\n", fres);
+        myprintf("Try %d times\r\n", attempt);
         attempt++;
         if (FATFS_UnLinkDriver(&USERPath)) {
             myprintf("FATFS Unlinked fail!!");
             NVIC_SystemReset();
         }
         else
-            myprintf("FATFS Unlink success\n");
+            myprintf("FATFS Unlink success\r\n");
         turn_off_spi_SD();
         HAL_GPIO_WritePin(SD_EN_GPIO_Port, SD_EN_Pin, RESET);
         HAL_Delay(500);
@@ -530,21 +442,21 @@ char* New_Log(LOGGER_STAT stat)
         MX_SPI2_Init();
         MX_FATFS_Init();
         HAL_Delay(100);
-        myprintf("\r\n~ SD card re-initializing... ~\r\n\r\n");
+        myprintf("\r\r\n~ SD card re-initializing... ~\r\r\n\r\r\n");
         fres = f_mount(&FatFs, (const TCHAR*)FATPATH, 1); // 1=mount now
     }
 
 #ifdef DEBUG
-    myprintf("\r\n~ SD card mounted successfully ~\r\n\r\n");
-    myprintf("\n***FRAM generate/indicate file location!!\n");
+    myprintf("\r\r\n~ SD card mounted successfully ~\r\r\n\r\r\n");
+    myprintf("\r\n***FRAM generate/indicate file location!!\r\n");
 #endif
     // Combine two 8-bit FRAM spots into one 16-bit number
     lsb = FRAM_read8(LOCATION_FILE_NUMBER_LSB);
     msb = FRAM_read8(LOCATION_FILE_NUMBER_MSB);
 
 #ifdef DEBUG
-    myprintf("Location lsb: %d\n", lsb);
-    myprintf("Location msb: %d\n", msb);
+    myprintf("Location lsb: %d\r\n", lsb);
+    myprintf("Location msb: %d\r\n", msb);
 #endif
 
     // If both FRAM spots are 255 (0xFF), that means they are un-initialized (first time Logger has been turned on)
@@ -565,7 +477,7 @@ char* New_Log(LOGGER_STAT stat)
         FRAM_writeEnable(false);
 
 #ifdef DEBUG
-        myprintf("Updated next log file number\n");
+        myprintf("Updated next log file number\r\n");
 #endif
         return newFileName;
     }
@@ -579,8 +491,8 @@ char* New_Log(LOGGER_STAT stat)
             FRAM_write8(LOCATION_FILE_NUMBER_MSB, 0x00);
             FRAM_writeEnable(false);
 #ifdef DEBUG
-            myprintf("Location lsb updated: %d\n", lsb);
-            myprintf("Location msb updated: %d\n", msb);
+            myprintf("Location lsb updated: %d\r\n", lsb);
+            myprintf("Location msb updated: %d\r\n", msb);
 #endif
         }
         // Let's quit if we reach 65534 files
@@ -624,72 +536,57 @@ char* New_Log(LOGGER_STAT stat)
         FRAM_sleepEnable(true);
 
 #ifdef DEBUG
-        myprintf("Location lsb updated: %d\n", lsb);
-        myprintf("Location msb updated: %d\n", msb);
+        myprintf("Location lsb updated: %d\r\n", lsb);
+        myprintf("Location msb updated: %d\r\n", msb);
 #endif
         RESET_FLAG = 0;
     }
     else {
         sprintf(newFileName, "LOG%05d.TXT", newFileNumber);
 #ifdef DEBUG
-        myprintf("File number: %s\r\n", newFileName);
+        myprintf("File number: %s\r\r\n", newFileName);
 #endif // DEBUG
     }
     return newFileName;
 }
 
-/*!
- *  @brief  Main function to receive UART data and buffer to FRAM
- *          After interval waiting time, data from buffer will be written to SD NAND and buffer is reset
- *  @param  None
- *  @retval None
- */
-void Append_Data()
+/*Enter stop mode 1 and set UART as wakeup source*/
+static void Stop_Mode_Entry(void)
 {
-    // unsigned long currentTime = HAL_GetTick();
-    FRAM_sleepEnable(false);
-    unsigned long lastSyncTime = HAL_GetTick(); // Keeps track of the last time the data was synced
-    while (1) {
-        /*Buffering incoming data*/
-        HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, RESET);
-        if (RX_Flag_1) {
-            HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, SET);
-            if (FRAM_write(&LOCATION_BUFFER_ITERATOR, readBuf) != FRAM_OK) {
-                Error_Handler();
-            }
-            if (Buffer_Sync(&LOCATION_BUFFER_ITERATOR, Buffer_Sync_) == BUFFER_OK) {
-                myprintf("Buffer_OK Size: %d\n", LOCATION_BUFFER_ITERATOR);
-            }
-            HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, RESET);
-            /*If buffer exceed max capacity -- write to SD*/
-            if (LOCATION_BUFFER_ITERATOR >= LOCATION_BUFFER_START + BUFFER_MAX) {
-                SD_Flag = 1;
-            }
-            lastSyncTime = HAL_GetTick(); // Reset interval time
-            RX_Flag_1 = 0;                // Reset RX_IT flag
-            HAL_UARTEx_ReceiveToIdle_IT(&huart2, (uint8_t*)Rx_data_1, sizeof(Rx_data_1));
-        }
 
-        /*Write data from buffer to SD after buffer is full*/
-        else if (SD_Flag) {
-            Append_File(New_Log(BUFFER_OK));
-            SD_Flag = 0;
-            lastSyncTime = HAL_GetTick(); // Reset interval time
-            HAL_UARTEx_ReceiveToIdle_IT(&huart2, (uint8_t*)Rx_data_1, sizeof(Rx_data_1));
-        }
+    /*Kindly turn off FRAM and other peripherals :) */
+    peripherals_sleep();
 
-        /*After [USER_DEFINE] seconds -> Go to sleep*/
-        else if ((unsigned long)(HAL_GetTick() - lastSyncTime) > MAX_IDLE_TIME_MSEC) {
-            FRAM_sleepEnable(true);
-            Stop_Mode_Entry();
+    /* Enable the USART2 Wake UP from STOP mode Interrupt */
+    __HAL_UART_ENABLE_IT(&huart2, UART_IT_WUF);
+
+    /* enable MCU wake-up by USART1 */
+    HAL_UARTEx_EnableStopMode(&huart2);
+// #ifdef DEBUG
+// myprintf("I go to sleep now!");
+// #endif
 #ifdef DEBUG
-            myprintf("******WAKE UP FROM STOP MODE******\n");
+    myprintf("******I am done waiting!!! Now I go sleep ******\r\n");
+#else
+    myprintf(">.<!\r\n");
 #endif
-            FRAM_sleepEnable(false); // make sure FRAM is woken up properly
-            HAL_UARTEx_ReceiveToIdle_IT(&huart2, (uint8_t*)Rx_data_1, sizeof(Rx_data_1));
-            lastSyncTime = HAL_GetTick(); // Reset interval time
-        }
-    }
+    /*Deinit peripherals*/
+    HAL_DBGMCU_DisableDBGSleepMode();
+    HAL_DBGMCU_DisableDBGStopMode();
+    HAL_DBGMCU_DisableDBGStandbyMode();
+    HAL_SuspendTick();
+    /*Enter stop mode*/
+    HAL_PWREx_EnterSTOP1Mode(PWR_STOPENTRY_WFI);
+
+    /*Escape from stop mode*/
+    SystemClock_Config();
+    HAL_ResumeTick();
+    MX_GPIO_Init();
+    MX_SPI1_Init();
+    turn_off_spi_SD();
+    HAL_GPIO_WritePin(SD_EN_GPIO_Port, SD_EN_Pin, RESET);
+    /* Wake up based on RXNE flag successful*/
+    HAL_UARTEx_DisableStopMode(&huart2);
 }
 
 /*!
@@ -699,7 +596,7 @@ void Append_Data()
  *          Name of the file generated from the function New_Log
  *  @retval None
  */
-uint8_t Append_File(char* fileName)
+static uint8_t Append_File(char* fileName)
 {
     UINT bytesWrote = 0;
     UINT Total_Byte_Wrote = 0;
@@ -707,7 +604,7 @@ uint8_t Append_File(char* fileName)
     fres = f_open(&workingFile, fileName, FA_READ | FA_WRITE | FA_OPEN_APPEND);
     if (fres != FR_OK) {
 #ifdef DEBUG
-        myprintf("f_open error (%i)\r\n", fres);
+        myprintf("f_open error (%i)\r\r\n", fres);
 #endif
         Error_Handler();
     }
@@ -722,23 +619,23 @@ uint8_t Append_File(char* fileName)
         strncpy((char*)writeBuf, FRAM_read(&index), sizeof(writeBuf)); // copy from buffer to SD (reset buffer iterator)
         fres = f_write(&workingFile, writeBuf, strlen(writeBuf), &bytesWrote);
         if (fres != FR_OK) {
-            myprintf("f_write error (%i)\r\n");
+            myprintf("f_write error (%i)\r\r\n");
         }
         else
             Total_Byte_Wrote += bytesWrote;
     }
 
 #ifdef DEBUG
-    myprintf("Wrote total %i bytes to %s!\r\n", Total_Byte_Wrote, fileName);
+    myprintf("Wrote total %i bytes to %s!\r\r\n", Total_Byte_Wrote, fileName);
     f_close(&workingFile);
     /*Now let's try to open file "test.txt"*/
     fres = f_open(&workingFile, fileName, FA_READ | FA_OPEN_EXISTING);
     if (fres != FR_OK) {
-        myprintf("f_open error (%i)\r\n", fres);
+        myprintf("f_open error (%i)\r\r\n", fres);
         while (1)
             ;
     }
-    myprintf("I was able to open %s !!\r\n", fileName);
+    myprintf("I was able to open %s !!\r\r\n", fileName);
 #endif
     f_sync(&workingFile);
     /*We're done with SD, let's un-mount the drive*/
@@ -749,26 +646,12 @@ uint8_t Append_File(char* fileName)
     f_mount(NULL, FATPATH, 0);
     /*We're also done with FRAM, let's reset the iterator*/
     LOCATION_BUFFER_ITERATOR = LOCATION_BUFFER_START;
-    Buffer_Sync(LOCATION_BUFFER_ITERATOR, SD_DONE);
+    // buffer_sync(LOCATION_BUFFER_ITERATOR, SD_DONE);
     /*Don't forget to turn off the power after using :) */
     turn_off_spi_SD();
     HAL_GPIO_WritePin(SD_EN_GPIO_Port, SD_EN_Pin, RESET);
-    myprintf("SD_OK!\n");
+    myprintf("SD_OK!\r\n");
     return 0;
-}
-
-/*Blink leds when system receive error based on error type*/
-void System_error(LOGGER_ERROR Error_type)
-{
-    while (1) {
-        for (int index = 0; index < Error_type; index++) {
-            HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, SET);
-            HAL_Delay(200);
-            HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, RESET);
-            HAL_Delay(200);
-        }
-        HAL_Delay(2000);
-    }
 }
 
 /*!
@@ -781,7 +664,7 @@ void System_error(LOGGER_ERROR Error_type)
  * || SD_DONE: Done writing to the SD
  *  @retval None
  */
-uint8_t Buffer_Sync(int* Buffer_Iterator, LOGGER_STAT stat)
+static uint8_t buffer_sync(int* Buffer_Iterator, LOGGER_STAT stat)
 {
     switch (stat) {
         case LOGGER_INIT:
@@ -790,7 +673,7 @@ uint8_t Buffer_Sync(int* Buffer_Iterator, LOGGER_STAT stat)
             uint8_t stat_check = FRAM_read8(LOGGER_STAT_LOCATION);
             if (stat_check == SD_DONE || stat_check == BUFFER_OK || stat_check == Buffer_Sync_DONE) {
 #ifdef DEBUG
-                myprintf("Done synchronizing.!!\n");
+                myprintf("Done synchronizing.!!\r\n");
 #endif
                 return BUFFER_OK;
             }
@@ -803,8 +686,8 @@ uint8_t Buffer_Sync(int* Buffer_Iterator, LOGGER_STAT stat)
 
                 LOCATION_BUFFER_ITERATOR = _update_iterator;
 #ifdef DEBUG
-                myprintf("\n\nLast logging period stops at %d\n", LOCATION_BUFFER_ITERATOR);
-                myprintf("Buffer is reset!!... Now start synchronizing to SD\n\n");
+                myprintf("\r\n\r\nLast logging period stops at %d\r\n", LOCATION_BUFFER_ITERATOR);
+                myprintf("Buffer is reset!!... Now start synchronizing to SD\r\n\r\n");
 #endif
                 Append_File(New_Log(Buffer_Sync_));
                 FRAM_writeEnable(true);
@@ -841,6 +724,60 @@ uint8_t Buffer_Sync(int* Buffer_Iterator, LOGGER_STAT stat)
     }
     return BUFFER_OK;
 }
+
+/*!
+ *  @brief  Main function to receive UART data and buffer to FRAM
+ *          After interval waiting time, data from buffer will be written to SD NAND and buffer is reset
+ *  @param  None
+ *  @retval None
+ */
+static void log_buffer(void)
+{
+    // unsigned long currentTime = HAL_GetTick();
+    FRAM_sleepEnable(false);
+    unsigned long lastSyncTime = HAL_GetTick(); // Keeps track of the last time the data was synced
+    while (1) {
+        /*Buffering incoming data*/
+        HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, RESET);
+        if (RX_Flag_1) {
+            HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, SET);
+            if (FRAM_write(&LOCATION_BUFFER_ITERATOR, readBuf) != FRAM_OK) {
+                Error_Handler();
+            }
+            if (buffer_sync(&LOCATION_BUFFER_ITERATOR, Buffer_Sync_) == BUFFER_OK) {
+                myprintf("Buffer_OK Size: %d\r\n", LOCATION_BUFFER_ITERATOR);
+            }
+            HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, RESET);
+            /*If buffer exceed max capacity -- write to SD*/
+            if (LOCATION_BUFFER_ITERATOR >= LOCATION_BUFFER_START + BUFFER_MAX) {
+                SD_Flag = 1;
+            }
+            lastSyncTime = HAL_GetTick(); // Reset interval time
+            RX_Flag_1 = 0;                // Reset RX_IT flag
+            HAL_UARTEx_ReceiveToIdle_IT(&huart2, (uint8_t*)Rx_data_1, sizeof(Rx_data_1));
+        }
+
+        /*Write data from buffer to SD after buffer is full*/
+        else if (SD_Flag) {
+            Append_File(New_Log(BUFFER_OK));
+            SD_Flag = 0;
+            lastSyncTime = HAL_GetTick(); // Reset interval time
+            HAL_UARTEx_ReceiveToIdle_IT(&huart2, (uint8_t*)Rx_data_1, sizeof(Rx_data_1));
+        }
+
+        /*After [USER_DEFINE] seconds -> Go to sleep*/
+        else if ((unsigned long)(HAL_GetTick() - lastSyncTime) > MAX_IDLE_TIME_MSEC) {
+            FRAM_sleepEnable(true);
+            Stop_Mode_Entry();
+#ifdef DEBUG
+            myprintf("******WAKE UP FROM STOP MODE******\r\n");
+#endif
+            FRAM_sleepEnable(false); // make sure FRAM is woken up properly
+            HAL_UARTEx_ReceiveToIdle_IT(&huart2, (uint8_t*)Rx_data_1, sizeof(Rx_data_1));
+            lastSyncTime = HAL_GetTick(); // Reset interval time
+        }
+    }
+}
 /* USER CODE END 0 */
 
 /**
@@ -871,6 +808,7 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_SPI1_Init();
   MX_SPI2_Init();
   MX_USART2_UART_Init();
@@ -878,46 +816,45 @@ int main(void)
   MX_CRC_Init();
   MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 2 */
-    if (!FRAM_begin(3)) {
-        myprintf("SPI FRAM begin error.. check your connection !!\n");
-        while (1)
+    if (!FRAM_begin(3u)) {
+        myprintf("SPI FRAM begin error.. check your connection !!\r\n");
+        while (true)
             ;
     }
     else
-        myprintf("Logger init %s\n", VERSION);
-// if(Logger_Config() == CONFIG_OK){
+        myprintf("Logger init %s\r\n", VERSION);
+// if(logger_Config() == CONFIG_OK){
 //   NVIC_SystemReset();
 // }
 #ifdef DEBUG
     uint8_t manufID;
     uint16_t prodID;
     FRAM_getID(&manufID, &prodID); // Check FRAM parameter
-    myprintf("Manufacture ID: 0x%X\n", manufID);
-    myprintf("product ID: 0x%X\n", prodID);
-    myprintf("Current iterator: %d\n", LOCATION_BUFFER_ITERATOR);
+    myprintf("Manufacture ID: 0x%X\r\n", manufID);
+    myprintf("product ID: 0x%X\r\n", prodID);
+    myprintf("Current iterator: %d\r\n", LOCATION_BUFFER_ITERATOR);
 #endif
 
 #ifdef LOGGER_RESET
     FRAM_writeEnable(true);
-    myprintf("FRAM Start reseting!\n");
+    myprintf("FRAM Start reseting!\r\n");
     FRAM_write8((uint8_t)LOGGER_STAT_LOCATION, BUFFER_OK);
     FRAM_write8(DEVICE_ID_LOCATION, 0);
     FRAM_write8(LOCATION_FILE_NUMBER_LSB, 0);
     FRAM_write8(LOCATION_FILE_NUMBER_MSB, 0);
     FRAM_writeEnable(false);
-    myprintf("Logger has been reset sucessfully.. please reboot the device!\n");
+    myprintf("Logger has been reset sucessfully.. please reboot the device!\r\n");
     System_error(LOGGER_RESET);
 #endif
-    if (Buffer_Sync(NULL, LOGGER_INIT) == Buffer_Sync_DONE) {
+    if (buffer_sync(NULL, LOGGER_INIT) == Buffer_Sync_DONE) {
 #ifdef DEBUG
-        myprintf("Done synchronizing from last logging time...reset now!!\n");
+        myprintf("Done synchronizing from last logging time...reset now!!\r\n");
 #endif
         NVIC_SystemReset();
     }
 
     if (HAL_GPIO_ReadPin(Vbus_Sense_GPIO_Port, Vbus_Sense_Pin)) {
-        HAL_Delay(500);
-        myprintf("Logger is in USB mode! Please connect to a USB port on the adapter\n");
+        myprintf("Logger is in USB mode! Please connect to a USB port on the adapter\r\n");
         USB_init(USB_PLUGIN);
     }
     else
@@ -928,7 +865,7 @@ int main(void)
         /*turn off SD NAND to save power*/
         turn_off_spi_SD();
         HAL_GPIO_WritePin(SD_EN_GPIO_Port, SD_EN_Pin, RESET);
-        myprintf("<\n");
+        myprintf("<\r\n");
     }
   /* USER CODE END 2 */
 
@@ -936,7 +873,7 @@ int main(void)
   /* USER CODE BEGIN WHILE */
     while (1) {
         if (USB_Flag == 0) {
-            Append_Data();
+            log_buffer();
         }
     /* USER CODE END WHILE */
 
@@ -1143,6 +1080,22 @@ static void MX_USART2_UART_Init(void)
 }
 
 /**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Channel7_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel7_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel7_IRQn);
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -1252,7 +1205,7 @@ void assert_failed(uint8_t *file, uint32_t line)
 {
   /* USER CODE BEGIN 6 */
     /* User can add his own implementation to report the file name and line number,
-       ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+       ex: printf("Wrong parameters value: file %s on line %d\r\r\n", file, line) */
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
