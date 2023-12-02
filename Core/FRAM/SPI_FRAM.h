@@ -28,14 +28,14 @@
 #define FRAM_OK 0
 /** Operation Codes **/
 typedef enum opcodes_e {
-  OPCODE_WREN = 0b0110,         /* Write Enable Latch D6*/
-  OPCODE_WRDI = 0b0100,         /* Reset Write Enable Latch D4*/
-  OPCODE_RDSR = 0b0101,         /* Read Status Register D5*/
-  OPCODE_WRSR = 0b0001,         /* Write Status Register D1*/
-  OPCODE_READ = 0b0011,         /* Read Memory D3*/
-  OPCODE_WRITE = 0b0010,        /* Write Memory D2*/
-  OPCODE_RDID = 0b10011111,     /* Read Device ID D159*/
-  OPCODE_SLEEP = 0b10111001     /*Sleep Mode 185 apply to MB85RS2MTA chip*/
+  OPCODE_WRSR = 1u,         /* Write Status Register D1*/
+  OPCODE_WRITE,        /* Write Memory D2*/
+  OPCODE_READ,         /* Read Memory D3*/
+  OPCODE_WRDI,         /* Reset Write Enable Latch D4*/
+  OPCODE_RDSR,         /* Read Status Register D5*/
+  OPCODE_WREN,         /* Write Enable Latch D6*/
+  OPCODE_RDID = 159u,     /* Read Device ID D159*/
+  OPCODE_SLEEP = 185u,     /*Sleep Mode 185 apply to MB85RS2MTA chip*/
 } opcodes_t;
 
 /*!

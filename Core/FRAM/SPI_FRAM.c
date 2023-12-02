@@ -109,14 +109,14 @@ bool FRAM_begin(uint8_t nAddressSizeBytes) {
     @param enable
             True enables writes, false disables writes
 */
-void FRAM_writeEnable(bool enable){
+void FRAM_writeEnable(bool enabled){
   uint8_t cmd;
-  if (enable){
+  if (enabled){
     cmd = OPCODE_WREN;
   }
   else cmd = OPCODE_WRDI;
   CS_LOW();
-  HAL_SPI_Transmit(&SPI_FRAM_HANDLE, &cmd, sizeof(cmd), 10);
+  HAL_SPI_Transmit_DMA(&SPI_FRAM_HANDLE, &cmd, sizeof(cmd));
   CS_HIGH();
 }
 
@@ -130,7 +130,7 @@ void FRAM_sleepEnable(bool enable){
   if(enable){
     cmd = OPCODE_SLEEP;
     CS_LOW();
-    HAL_SPI_Transmit(&SPI_FRAM_HANDLE, &cmd, sizeof(cmd), 10);
+    HAL_SPI_Transmit_DMA(&SPI_FRAM_HANDLE, &cmd, sizeof(cmd));
     CS_HIGH();
   }
   else{
@@ -161,7 +161,7 @@ void FRAM_write8(uint32_t addr, uint8_t value) {
   buffer[i++] = value;
 
   CS_LOW();
-  HAL_SPI_Transmit(&SPI_FRAM_HANDLE, (uint8_t*)buffer, i, 10);
+  HAL_SPI_Transmit_DMA(&SPI_FRAM_HANDLE, (uint8_t*)buffer, i);
   CS_HIGH();
   //spi_dev->write(buffer, i);
 }
@@ -204,10 +204,9 @@ uint8_t FRAM_read8(uint32_t addr) {
   buffer[i++] = (uint8_t)(addr & 0xFF);
 
   CS_LOW();
-  HAL_SPI_Transmit(&SPI_FRAM_HANDLE, (uint8_t*)buffer, i, 10);
-  HAL_SPI_Receive(&SPI_FRAM_HANDLE, &val,sizeof(val), 10);
+  HAL_SPI_Transmit_DMA(&SPI_FRAM_HANDLE, (uint8_t*)buffer, i);
+  HAL_SPI_Receive_DMA(&SPI_FRAM_HANDLE, &val,sizeof(val));
   CS_HIGH();
-  //spi_dev->write_then_read(buffer, i, &val, 1);
 
   return val;
 }
@@ -235,16 +234,16 @@ const char* FRAM_read(uint32_t *addr){
 
 void FRAM_getID(uint8_t *manufacturerID, uint16_t *productID){
   uint8_t cmd = OPCODE_RDID;
-  uint8_t a[4] = {0, 0, 0, 0};
+  uint8_t a[4u] = {0, 0, 0, 0};
   CS_LOW();
-  HAL_SPI_Transmit(&SPI_FRAM_HANDLE, &cmd, 1, 10);
-  HAL_SPI_Receive(&SPI_FRAM_HANDLE, (uint8_t *)a, sizeof(a), 10);
+  HAL_SPI_Transmit_DMA(&SPI_FRAM_HANDLE, &cmd, 1u);
+  HAL_SPI_Receive_DMA(&SPI_FRAM_HANDLE, (uint8_t *)a, sizeof(a));
   CS_HIGH();
-  if(a[1] == 0x7f){
+  if(a[1u] == 0x7fu){
     // Device with continuation code (0x7F) in their second byte
     // Manu ( 1 byte)  - 0x7F - Product (2 bytes)
     *manufacturerID = (a[0]);
-    *productID = (a[2] << 8) + a[3];
+    *productID = (a[2u] << 8u) + a[3u];
   } else {
     // Device without continuation code
     // Manu ( 1 byte)  - Product (2 bytes)
