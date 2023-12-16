@@ -54,7 +54,7 @@ uint8_t FRAM_write(uint32_t *addr, char value[]);
 //void write(uint32_t addr, const uint8_t *values, uint16_t count);
 uint8_t FRAM_read8(uint32_t addr);
 const char* FRAM_read(uint32_t *addr);
-void FRAM_getID(uint8_t *manufacturerID, uint16_t *productID);
+void FRAM_getID(uint8_t *manufacturerID, uint32_t *productID);
 uint32_t check_supported_device(uint8_t *manufID, uint16_t *prodID); 
 uint8_t getStatusRegister(void);
 void setStatusRegister(uint8_t value);

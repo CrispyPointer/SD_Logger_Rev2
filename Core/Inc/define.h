@@ -4,8 +4,8 @@
 #define VERSION     "v2.0"
 #define CONFIG_FILE "config.txt"
 
-//#define DEBUG
-//#define LOGGER_RESET 1
+#define DEBUG
+// #define LOGGER_RESET
 #ifdef DEBUG
     #warning "You are running a debug build!"
 #endif
@@ -34,17 +34,17 @@
 
 // #define LOCATION_LOGGER_RESTORE 0x0E
 
-#define LOCATION_BUFFER_START 20      // Address of start position when buffering
-#define LOCATION_BUFFER_END   0x3ff70 // Address of end position when buffering (260000)
+#define LOCATION_BUFFER_START 20u      // Address of start position when buffering
+#define LOCATION_BUFFER_END   0x3ff70u // Address of end position when buffering (260000)
 
 /*************************************************USER DEFINE BUFFER SIZE, ITERATOR LOCAION AND TIMEOUT**********************************/
-uint32_t LOCATION_BUFFER_ITERATOR = LOCATION_BUFFER_START; // Iterator to the current position of the buffer
 #ifdef DEBUG
-static const unsigned int BUFFER_MAX = 1000; // User define max buffer 100 characters for debugging
+#define BUFFER_MAX 100u // User define max buffer 100 characters for debugging
+#define MAX_IDLE_TIME_MSEC UINT32_MAX // User define timeout before going low power
 #else
-static const unsigned int BUFFER_MAX = 30000; // User define max buffer from 20 to 262000
+#define BUFFER_MAX 30000 // User define max buffer from 20 to 262000
+#define MAX_IDLE_TIME_MSEC 5000 // User define timeout before going low power
 #endif
-static const uint32_t MAX_IDLE_TIME_MSEC = 5000; // User define timeout before going low power
 
 
 

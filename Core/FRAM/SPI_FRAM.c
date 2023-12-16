@@ -31,6 +31,7 @@
 
 /*SPI_FRAM header file*/
 #include "SPI_FRAM.h"
+#include <stdint.h>
 
 extern SPI_HandleTypeDef SPI_FRAM_HANDLE;
 SPI_FRAM spi_fram;
@@ -232,7 +233,7 @@ const char* FRAM_read(uint32_t *addr){
   }
 }
 
-void FRAM_getID(uint8_t *manufacturerID, uint16_t *productID){
+void FRAM_getID(uint8_t *manufacturerID, uint32_t *productID){
   uint8_t cmd = OPCODE_RDID;
   uint8_t a[4u] = {0, 0, 0, 0};
   CS_LOW();
@@ -241,12 +242,12 @@ void FRAM_getID(uint8_t *manufacturerID, uint16_t *productID){
   CS_HIGH();
   if(a[1u] == 0x7fu){
     // Device with continuation code (0x7F) in their second byte
-    // Manu ( 1 byte)  - 0x7F - Product (2 bytes)
+    // Manuf ( 1 byte)  - 0x7F - Product (2 bytes)
     *manufacturerID = (a[0]);
     *productID = (a[2u] << 8u) + a[3u];
   } else {
     // Device without continuation code
-    // Manu ( 1 byte)  - Product (2 bytes)
+    // Manuf ( 1 byte)  - Product (2 bytes)
     *manufacturerID = (a[0]);
     *productID = (a[1] << 8) + a[2];
   }
