@@ -14,31 +14,16 @@
         },
         {
             "type": "shell",
-            "label": "Build (debug)",
-            "command": "make",
-            "args": [
-                "all",
-                "DEBUG=1",
-                "-j10"
-            ],
-            "problemMatcher": [
-                "$gcc"
-            ],
-            "detail": "Build debug version"
-        },
-        {
-            "type": "shell",
             "label": "Build",
             "command": "make",
             "args": [
                 "all",
-                "DEBUG=0",
                 "-j10"
             ],
             "problemMatcher": [
                 "$gcc"
             ],
-            "detail": "Build normal version"
+            "detail": "Build project with Make"
         },
         {
             "type": "shell",
