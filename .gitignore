@@ -2,3 +2,6 @@ build/**
 
 # VScode environment
 .vscode/**
+
+#IOC
+SD_Logger_Test.ioc
