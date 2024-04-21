@@ -9,6 +9,7 @@
 #include "console.h"
 #include "define.h"
 #include "main.h"
+#include "timer.h"
 
 void log_info(const char* fmt, ...)
 {
