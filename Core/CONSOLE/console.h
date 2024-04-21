@@ -4,11 +4,13 @@
 #include <stdarg.h> //for va_list var arg functions
 
 /**
- * @brief Custom console log function using UART 
- * 
+ * @brief Custom console log function using UART
+ *
  * @param fmt arguments
- * @param ... 
+ * @param ...
  */
-void console_log(const char* fmt, ...);
+void log_info(const char* fmt, ...);
+
+void console_task_entry(void);
 
 #endif // !CONSOLE_H

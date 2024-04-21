@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include "fatfs.h"
 
-bool sd_init(FATFS* hfat);
+bool sd_init(void);
 
 /*!
  *  @brief  Turn off SD NAND chip by disable 3V3 power supply and put the GPIOs to analog mode

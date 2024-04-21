@@ -1,12 +1,15 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "SD.h"
 #include "console.h"
 #include "fatfs.h"
 #include "gpio_config.h"
 #include "main.h"
+#include "sd.h"
 
+// Some variables for FatFs
+static FATFS FatFs;                   // Fatfs handle
+static FIL newFile, workingFile, fil; // File handle
 static char FATPATH[4];
 
 void sd_power_on(void)
@@ -30,13 +33,13 @@ void sd_power_off(void)
     SD_PWR_OFF;
 }
 
-bool sd_init(FATFS* hfat)
+bool sd_init(void)
 {
     bool ret = true;
 
     FRESULT fres;
 
-    fres = f_mount(hfat, (const TCHAR*)FATPATH, 1); // 1=mount now
+    fres = f_mount(&FatFs, (const TCHAR*)FATPATH, 1); // 1=mount now
 
     // TODO: Look for a safe way to do this
     // while (fres != FR_OK) {
@@ -60,7 +63,7 @@ bool sd_init(FATFS* hfat)
 
     if (fres == FR_OK)
     {
-        console_log("SD mounted\r\n");
+        log_info("SD mounted\r\n");
         ret = true;
     }
 

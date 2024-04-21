@@ -1,15 +1,25 @@
 #ifndef DEFINE_H
 #define DEFINE_H
 
-#define VERSION     "v2.0"
-#define CONFIG_FILE "config.txt"
+#define VERSION_MAJOR 2u
+#define VERSION_MINOR 0u
+#define CONFIG_FILE   "config.txt"
 
 #define DEBUG
-// #define LOGGER_RESET
-#ifdef DEBUG
-    #warning "You are running a debug build!"
-#endif
 
+/**< RTOS Stack Definition */
+#define CONSOLE_STACK       128u
+#define CONSOLE_PRIORITY    1u
+#define LOGGER_APP_STACK    128u
+#define LOGGER_APP_PRIORITY 3u
+#define SD_STACK            128u
+#define SD_PRIORITY         2u
+#define FRAM_STACK          128u
+#define FRAM_PRIORITY       4u
+
+/**< Logger Configuration */
+#define CFG_FILENAME "config.txt" // Name of the file that contains configuration
+#define MB85RS2MTA                /**< FUJITSU 256kbytes FRAM */
 /*************************************************FRAM ADDRESS CONFIG*****************************************************/
 // External FRAM locations for user settings
 #define DEVICE_ID_LOCATION 0x02 // Each logger will be assigned a unique ID
@@ -39,13 +49,11 @@
 
 /*************************************************USER DEFINE BUFFER SIZE, ITERATOR LOCAION AND TIMEOUT**********************************/
 #ifdef DEBUG
-#define BUFFER_MAX 100u // User define max buffer 100 characters for debugging
-#define MAX_IDLE_TIME_MSEC UINT32_MAX // User define timeout before going low power
+    #define BUFFER_MAX         100u       // User define max buffer 100 characters for debugging
+    #define MAX_IDLE_TIME_MSEC UINT32_MAX // User define timeout before going low power
 #else
-#define BUFFER_MAX 30000 // User define max buffer from 20 to 262000
-#define MAX_IDLE_TIME_MSEC 5000 // User define timeout before going low power
+    #define BUFFER_MAX         30000 // User define max buffer from 20 to 262000
+    #define MAX_IDLE_TIME_MSEC 5000  // User define timeout before going low power
 #endif
-
-
 
 #endif /* DEFINE_H */
