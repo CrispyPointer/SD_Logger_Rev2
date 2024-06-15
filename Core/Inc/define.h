@@ -5,17 +5,22 @@
 #define VERSION_MINOR 0u
 #define CONFIG_FILE   "config.txt"
 
-#define DEBUG
+#define LOGGER_DEBUG
+#define LOGGER_ERROR
+#define LOGGER_TEST
+
+/**< Console module defines */
+#define CONSOLE_ECHO
 
 /**< RTOS Stack Definition */
 #define CONSOLE_STACK       128u
-#define CONSOLE_PRIORITY    1u
+#define CONSOLE_PRIORITY    3u
 #define LOGGER_APP_STACK    128u
 #define LOGGER_APP_PRIORITY 3u
+#define FRAM_STACK          128u
+#define FRAM_PRIORITY       2u
 #define SD_STACK            128u
 #define SD_PRIORITY         2u
-#define FRAM_STACK          128u
-#define FRAM_PRIORITY       4u
 
 /**< Logger Configuration */
 #define CFG_FILENAME "config.txt" // Name of the file that contains configuration
@@ -48,8 +53,8 @@
 #define LOCATION_BUFFER_END   0x3ff70u // Address of end position when buffering (260000)
 
 /*************************************************USER DEFINE BUFFER SIZE, ITERATOR LOCAION AND TIMEOUT**********************************/
-#ifdef DEBUG
-    #define BUFFER_MAX         100u       // User define max buffer 100 characters for debugging
+#ifdef LOGGER_TEST
+    #define BUFFER_MAX         30u        // User define max buffer 100 characters for debugging
     #define MAX_IDLE_TIME_MSEC UINT32_MAX // User define timeout before going low power
 #else
     #define BUFFER_MAX         30000 // User define max buffer from 20 to 262000

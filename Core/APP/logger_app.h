@@ -7,13 +7,15 @@
 #include "define.h"
 #include "main.h"
 
+#define DATA_BUFFER_SIZE 190u
+
 /**< LOGGER STATUS & ERROR */
 typedef enum
 {
     INITIALIZATION = 0u,
     CONFIG_PROCESS,
-    IDLE,
-    FRAM_PROCESS,
+    WAITING,
+    RX_PROCESS,
     SD_PROCESS,
     USB_MS,
 } LOGGER_STATE_T;
@@ -22,7 +24,7 @@ typedef enum
 {
     ERROR_SD_INIT = 2u, // blink LED 2 times a second if SD card is mounted fail.
     SD_ERROR,
-    FRAM_ERROR,
+    BUFFER_ERROR,
     LOG_RESET,
     CONFIG_ERROR
 } LOGGER_ERROR_T;
@@ -35,17 +37,23 @@ typedef enum
 
 typedef struct
 {
-    bool usb_ms; /**< USB mass storage function */
-    uint32_t baudrate;
+    bool usb_ms;       /**< USB mass storage function */
+    uint32_t baudrate; /**< UART operational baudrate */
     LOGGER_MODE_T mode;
 } LOGGER_CONFIG_T;
 
 typedef struct
 {
+    uint8_t data[DATA_BUFFER_SIZE];
+    uint32_t size;
+} LOGGER_BUFFER_T;
+
+typedef struct
+{
     LOGGER_STATE_T state;
     LOGGER_CONFIG_T config;
-    uint32_t ram_addr; /**< Address of the current position of FRAM */
-    uint8_t rx_buffer[2048u];
+    uint32_t addr; /**< Address of the current position of FRAM */
+    LOGGER_BUFFER_T buffer;
     uint32_t timer; /**< logger timer */
 } LOGGER_DATA_T;
 

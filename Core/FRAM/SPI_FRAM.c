@@ -34,7 +34,7 @@
 #include "spi_fram.h"
 
 extern SPI_HandleTypeDef SPI_FRAM_HANDLE;
-SPI_FRAM spi_fram;
+static FRAM_DATA_T fram_data = { 0u };
 
 /* Function prototype*/
 #define SPI1_CS_HIGH() HAL_GPIO_WritePin(FRAM_CS_GPIO_Port, FRAM_CS_Pin, GPIO_PIN_SET)
@@ -117,7 +117,7 @@ static bool fram_get_id(uint8_t* manufacturerID, uint32_t* productID)
  */
 static void fram_set_addr_size(uint8_t nAddressSize)
 {
-    spi_fram._nAddressSizeBytes = nAddressSize;
+    fram_data._nAddressSizeBytes = nAddressSize;
 }
 
 bool fram_init(void)
@@ -144,17 +144,22 @@ bool fram_init(void)
 
     if (ret)
     {
-        log_info("fram size: %lu bytes \r\n", fram_size);
+        log_info("fram size: %lu bytes ", fram_size);
     }
     else
     {
-        log_info("Unsupported / No connection to fram device \r\n");
+        log_info("Unsupported / No connection to fram device ");
     }
 
     return ret;
 }
 
-bool fram_write_enable(bool enabled)
+/**
+    @brief  Enables or disables writing to the SPI dram
+    @param enable
+            True enables writes, false disables writes
+*/
+static bool fram_write_enable(bool enabled)
 {
     uint8_t cmd;
     if (enabled)
@@ -170,7 +175,12 @@ bool fram_write_enable(bool enabled)
     SPI1_CS_HIGH();
 }
 
-bool fram_sleep_enable(bool enable)
+/**
+ * @brief Enables or disables sleep mode of the FRAM
+ * @param enable
+ *              True enables sleep, flash disables sleep
+ */
+static bool fram_sleep_enable(bool enable)
 {
     uint8_t cmd;
     if (enable)
@@ -188,6 +198,13 @@ bool fram_sleep_enable(bool enable)
     }
 }
 
+/**
+ *  @brief  Writes 8-bit at the specific FRAM address
+ *  @param addr
+ *         The 32-bit address to write to in FRAM memory
+ *  @param value
+ *         The 8-bit value to write at framAddr
+ */
 bool fram_write_8b(uint32_t addr, uint8_t value)
 {
     bool ret = true;
@@ -195,9 +212,9 @@ bool fram_write_8b(uint32_t addr, uint8_t value)
     uint8_t i = 0;
 
     buffer[i++] = OPCODE_WRITE;
-    if (spi_fram._nAddressSizeBytes > 3)
+    if (fram_data._nAddressSizeBytes > 3)
         buffer[i++] = (uint8_t)(addr >> 24);
-    if (spi_fram._nAddressSizeBytes > 2)
+    if (fram_data._nAddressSizeBytes > 2)
         buffer[i++] = (uint8_t)(addr >> 16);
     buffer[i++] = (uint8_t)(addr >> 8);
     buffer[i++] = (uint8_t)(addr & 0xFF);
@@ -207,13 +224,20 @@ bool fram_write_8b(uint32_t addr, uint8_t value)
     HAL_StatusTypeDef hal_stat = HAL_SPI_Transmit_IT(&SPI_FRAM_HANDLE, (uint8_t*)buffer, i);
     if (hal_stat != HAL_OK)
     {
-        log_info("spi failed err %d\r\n", hal_stat);
+        log_info("spi failed err %d", hal_stat);
         ret = false;
     }
 
     return ret;
 }
 
+/**
+ *   @brief  Writes string starting at the specific FRAM address
+ *   @param addr
+ *           The 32-bit address to write to in FRAM memory
+ *   @param values
+ *           The pointer to an array of 8-bit values to write starting at addr
+ */
 bool fram_write(const uint32_t addr, const uint8_t* pData, uint8_t pLength)
 {
     fram_write_enable(true);
@@ -222,11 +246,11 @@ bool fram_write(const uint32_t addr, const uint8_t* pData, uint8_t pLength)
     uint8_t index = 0;
 
     buffer[index++] = OPCODE_WRITE;
-    if (spi_fram._nAddressSizeBytes > 3)
+    if (fram_data._nAddressSizeBytes > 3)
     {
         buffer[index++] = (uint8_t)(addr >> 24);
     }
-    if (spi_fram._nAddressSizeBytes > 2)
+    if (fram_data._nAddressSizeBytes > 2)
     {
         buffer[index++] = (uint8_t)(addr >> 16);
     }
@@ -244,19 +268,29 @@ bool fram_write(const uint32_t addr, const uint8_t* pData, uint8_t pLength)
     {
         ret = false;
     }
+    else
+    {
+        fram_set_index(addr + pLength);
+    }
 
     return ret;
 }
 
-uint8_t fram_read_8b(uint32_t addr)
+/**
+ *   @brief  Reads an 8-bit value from the specified FRAM address
+ *   @param  addr
+ *           The 32-bit address to read from in FRAM memory
+ *   @return The 8-bit value retrieved at framAddr
+ */
+static uint8_t fram_read_8b(uint32_t addr)
 {
     uint8_t buffer[10], val;
     uint8_t i = 0;
 
     buffer[i++] = OPCODE_READ;
-    if (spi_fram._nAddressSizeBytes > 3)
+    if (fram_data._nAddressSizeBytes > 3)
         buffer[i++] = (uint8_t)(addr >> 24);
-    if (spi_fram._nAddressSizeBytes > 2)
+    if (fram_data._nAddressSizeBytes > 2)
         buffer[i++] = (uint8_t)(addr >> 16);
     buffer[i++] = (uint8_t)(addr >> 8);
     buffer[i++] = (uint8_t)(addr & 0xFF);
@@ -269,6 +303,15 @@ uint8_t fram_read_8b(uint32_t addr)
     return val;
 }
 
+/**
+ *   @brief  Read 'string' starting at the specific FRAM address
+ *   @param  addr
+ *           The 32-bit address to write to in FRAM memory
+ *   @param  values
+ *           The pointer to an array of 8-bit values to read starting at addr
+ *   @param length
+ *           The number of bytes to read
+ */
 bool fram_read(const uint32_t addr, uint8_t* pData, uint8_t pLength)
 {
     bool ret = true;
@@ -276,11 +319,11 @@ bool fram_read(const uint32_t addr, uint8_t* pData, uint8_t pLength)
     uint8_t index = 0;
 
     buffer[index++] = OPCODE_READ;
-    if (spi_fram._nAddressSizeBytes > 3)
+    if (fram_data._nAddressSizeBytes > 3)
     {
         buffer[index++] = (uint8_t)(addr >> 24);
     }
-    if (spi_fram._nAddressSizeBytes > 2)
+    if (fram_data._nAddressSizeBytes > 2)
     {
         buffer[index++] = (uint8_t)(addr >> 16);
     }
@@ -301,36 +344,35 @@ bool fram_read(const uint32_t addr, uint8_t* pData, uint8_t pLength)
     return ret;
 }
 
-static void fram_task(void* argument)
+FRAM_STATE_T fram_get_state(void)
 {
-    if (!fram_init())
-    {
-        log_info("FRAM initialization failed.\r\n");
-    }
-    while (true)
-    {
-        task_delay(1u);
-    }
+    return fram_data.state;
 }
 
-void fram_task_entry(void)
+uint32_t fram_get_index(void)
 {
-    BaseType_t xReturned;
-    TaskHandle_t fram_handle = NULL;
-    xReturned = xTaskCreate(fram_task, "fram task", FRAM_STACK, NULL, FRAM_PRIORITY, &fram_handle);
+    return fram_data.current_index;
+}
 
-    if (xReturned != pdPASS)
-    {
-        log_info("fram task initialization failed\r\n");
-    }
+void fram_set_state(FRAM_STATE_T state)
+{
+    fram_data.state = state;
+}
+
+void fram_set_index(uint32_t index)
+{
+    fram_data.current_index = index;
 }
 
 void HAL_SPI_RxCpltCallback(SPI_HandleTypeDef* hspi)
 {
     SPI1_CS_HIGH();
+    fram_set_state(FRAM_DONE_READ);
 }
 
 void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef* hspi)
 {
     SPI1_CS_HIGH();
+    fram_write_enable(false); // Should this be here?
+    fram_set_state(FRAM_IDLE);
 }
