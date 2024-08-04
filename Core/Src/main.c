@@ -752,7 +752,6 @@ int main(void)
     /* Init scheduler and Banner */
     log_info(" ---- SD Logger by PL v%d.%d ---- \r\n", VERSION_MAJOR, VERSION_MINOR);
     osKernelInitialize();
-    fram_task_entry();
     console_task_entry();
     logger_app_task_entry();
 
