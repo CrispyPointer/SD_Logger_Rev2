@@ -24,6 +24,7 @@
 
 #include <stdbool.h>
 #include <string.h>
+#include "stm32l4xx_hal.h"
 
 /** Operation Codes **/
 typedef enum
@@ -84,4 +85,4 @@ void setStatusRegister(uint8_t value);
 
 void fram_task_entry(void);
 
-#endif
+#endif /* !_SPI_FRAM_H_*/

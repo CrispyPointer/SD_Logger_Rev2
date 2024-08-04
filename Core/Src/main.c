@@ -56,16 +56,13 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include <stdarg.h> //for va_list var arg functions
 #include <stdint.h>
-#include <stdio.h>
 #include <string.h>
 
+#include "../LOGGER_APP/logger_app.h" // Why is this PATH not working with just "logger_app.h"?
 #include "console.h"
 #include "define.h"
 #include "gpio_config.h"
-#include "logger_app.h"
-#include "sd.h"
 #include "spi_fram.h"
 #include "timer.h"
 

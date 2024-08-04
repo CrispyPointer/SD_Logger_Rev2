@@ -88,7 +88,7 @@ Core/FRAM/spi_fram.c \
 Core/SD/sd.c \
 Core/CONSOLE/console.c \
 Core/TIMER/timer.c \
-Core/APP/logger_app.c \
+Core/LOGGER_APP/logger_app.c \
 Core/Src/freertos.c \
 Core/Src/stm32l4xx_hal_timebase_tim.c \
 Middlewares/Third_Party/FreeRTOS/Source/croutine.c \
@@ -164,7 +164,7 @@ C_INCLUDES =  \
 -ICore/SD \
 -ICore/CONSOLE \
 -ICore/TIMER \
--Icore/APP \
+-Icore/LOGGER_APP \
 -IDrivers/STM32L4xx_HAL_Driver/Inc \
 -IDrivers/STM32L4xx_HAL_Driver/Inc/Legacy \
 -IMiddlewares/Third_Party/FatFs/src \
@@ -241,14 +241,14 @@ $(BUILD_DIR):
 # clean up
 #######################################
 clean:
-	del $(BUILD_DIR)
+	rm -r $(BUILD_DIR)
   
 #######################################
 # dependencies
 #######################################
 -include $(wildcard $(BUILD_DIR)/*.d)
 
-# openocd
+# STM32_Programmer
 #######################################
 flash: all
 	STM32_Programmer_CLI -c port=SWD -w $(BUILD_DIR)/$(TARGET).bin 0x08000000 -rst  

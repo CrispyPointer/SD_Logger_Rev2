@@ -97,7 +97,6 @@ void log_error(const char* fmt, ...)
 
 static bool console_init(void)
 {
-    // log_info("LOGGER CONSOLE");
     memset(&console_data, 0, sizeof(console_data));
     HAL_UART_Receive_IT(&USART_HANDLE, &console_data.rx, sizeof(console_data.rx));
     return true;
@@ -156,18 +155,14 @@ void console_task_entry(void)
     TaskHandle_t console_handle = NULL;
     xReturned = xTaskCreate(console_task, "console", CONSOLE_STACK, NULL, CONSOLE_PRIORITY, &console_handle);
 
-    // if (xReturned != pdPASS)
-    // {
-    //     log_info("Console task initialization failed");
-    // }
-    // else
-    // {
-    //     log_info("Console task initialization successfully");
-    // }
-
-    int my_variable = 0x12345678;
-    int* my_pointer = &my_variable;
-    log_info("%d", my_pointer);
+    if (xReturned != pdPASS)
+    {
+        log_info("Console task initialization failed");
+    }
+    else
+    {
+        log_info("Console task initialization successfully");
+    }
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef* huart)
